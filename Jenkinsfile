@@ -1,24 +1,26 @@
+
 pipeline {
     agent any
 
     stages {
         stage('Checkout') {
             steps {
-                echo 'Source code is available in the workspace'
+                echo 'Jenkins checked out the source from GitHub'
             }
         }
 
         stage('Install Dependencies') {
             steps {
                 sh 'python3 --version'
-                sh 'python3 -m pip --version'
-                sh 'python3 -m pip install -r requirements.txt'
+                sh 'python3 -m venv .venv'
+                sh '.venv/bin/python -m pip install --upgrade pip'
+                sh '.venv/bin/python -m pip install -r requirements.txt'
             }
         }
 
         stage('Run Tests') {
             steps {
-                sh 'python3 -m pytest -v'
+                sh '.venv/bin/python -m pytest -v'
             }
         }
 
@@ -29,3 +31,4 @@ pipeline {
         }
     }
 }
+
