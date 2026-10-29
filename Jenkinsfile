@@ -36,7 +36,20 @@ pipeline {
                 sh 'docker build -t product-service:1.0 .'
             }
         }
-
+        stage('Trivy Security Scan') {
+            steps {
+                sh '''
+                    docker run --rm \
+                        -v /var/run/docker.sock:/var/run/docker.sock \
+                        -v "$HOME/.cache/trivy:/root/.cache/" \
+                        aquasec/trivy:0.76.1 image \
+                        --scanners vuln \
+                        --severity CRITICAL \
+                        --exit-code 1 \
+                        product-service:1.0
+                '''
+            }
+        }
         stage('Login to AWS ECR') {
             steps {
                 withCredentials([usernamePassword(
