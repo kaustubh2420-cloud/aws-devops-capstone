@@ -77,6 +77,35 @@ pipeline {
                 '''
             }
         }
+
+        stage('Test SSM Deployment Connection') {
+            steps {
+                withCredentials([usernamePassword(
+                    credentialsId: 'jenkins-ssm-deploy-creds',
+                    usernameVariable: 'AWS_ACCESS_KEY_ID',
+                    passwordVariable: 'AWS_SECRET_ACCESS_KEY'
+                )]) {
+                    sh '''
+                        set +x
+                        export AWS_DEFAULT_REGION=ap-south-1
+
+                        aws sts get-caller-identity
+
+                        COMMAND_ID=$(aws ssm send-command \
+                            --instance-ids i-009945d6c8df46d10 \
+                            --document-name AWS-RunShellScript \
+                            --parameters '{"commands":["echo Jenkins SSM connectivity test successful"]}' \
+                            --region "$AWS_DEFAULT_REGION" \
+                            --query 'Command.CommandId' \
+                            --output text)
+
+                        echo "SSM test command submitted: $COMMAND_ID"
+                    '''
+                }
+            }
+        }
+
+
     }
 
     post {
