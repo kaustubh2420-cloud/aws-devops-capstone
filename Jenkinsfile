@@ -78,7 +78,8 @@ pipeline {
             }
         }
 
-        stage('Test SSM Deployment Connection') {
+
+        stage('Deploy to EC2') {
             steps {
                 withCredentials([usernamePassword(
                     credentialsId: 'jenkins-ssm-deploy-creds',
@@ -87,23 +88,71 @@ pipeline {
                 )]) {
                     sh '''
                         set +x
+                        set -e
+
                         export AWS_DEFAULT_REGION=ap-south-1
 
-                        aws sts get-caller-identity
+                        echo "Preparing EC2 deployment..."
+
+                      cat > ssm-commands.json <<'EOF'
+{
+  "commands": [
+    "set -e",
+    "aws ecr get-login-password --region ap-south-1 | docker login --username AWS --password-stdin 499989195436.dkr.ecr.ap-south-1.amazonaws.com",
+    "docker pull 499989195436.dkr.ecr.ap-south-1.amazonaws.com/product-service:1.0",
+    "if docker inspect product-service >/dev/null 2>&1; then docker stop product-service; docker rm product-service; fi",
+    "docker run -d --name product-service --restart unless-stopped -p 5000:5000 499989195436.dkr.ecr.ap-south-1.amazonaws.com/product-service:1.0",
+    "for i in $(seq 1 15); do if curl -fsS http://localhost:5000/; then exit 0; fi; sleep 2; done",
+    "echo Application health check failed",
+    "exit 1"
+  ]
+}
+EOF
 
                         COMMAND_ID=$(aws ssm send-command \
                             --instance-ids i-009945d6c8df46d10 \
                             --document-name AWS-RunShellScript \
-                            --parameters '{"commands":["echo Jenkins SSM connectivity test successful"]}' \
+                            --parameters file://ssm-commands.json \
                             --region "$AWS_DEFAULT_REGION" \
                             --query 'Command.CommandId' \
                             --output text)
 
-                        echo "SSM test command submitted: $COMMAND_ID"
+                        echo "Deployment command ID: $COMMAND_ID"
+
+                        for i in $(seq 1 30); do
+                            STATUS=$(aws ssm get-command-invocation \
+                                --command-id "$COMMAND_ID" \
+                                --instance-id i-009945d6c8df46d10 \
+                                --region "$AWS_DEFAULT_REGION" \
+                                --query 'Status' \
+                                --output text 2>/dev/null || true)
+
+                            echo "Deployment status: $STATUS"
+
+                            if [ "$STATUS" = "Success" ]; then
+                                echo "EC2 deployment successful!"
+                                exit 0
+                            fi
+
+                            if [ "$STATUS" = "Failed" ] || [ "$STATUS" = "Cancelled" ] || [ "$STATUS" = "TimedOut" ]; then
+                                echo "EC2 deployment failed!"
+                                aws ssm get-command-invocation \
+                                    --command-id "$COMMAND_ID" \
+                                    --instance-id i-009945d6c8df46d10 \
+                                    --region "$AWS_DEFAULT_REGION"
+                                exit 1
+                            fi
+
+                            sleep 5
+                        done
+
+                        echo "Deployment timed out while waiting for SSM."
+                        exit 1
                     '''
                 }
             }
         }
+
 
 
     }
