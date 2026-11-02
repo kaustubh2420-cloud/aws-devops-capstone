@@ -117,6 +117,10 @@ OLD_IMAGE=$(docker inspect --format='{{.Config.Image}}' product-service 2>/dev/n
 
 echo "Previous image: ${OLD_IMAGE:-none}"
 
+# Refresh ECR authentication before pulling the release.
+aws ecr get-login-password --region ap-south-1 |
+    docker login --username AWS --password-stdin "$REGISTRY"
+
 # Pull the new release before stopping the current application.
 docker pull "$NEW_IMAGE"
 
